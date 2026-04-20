@@ -180,39 +180,7 @@ describeTracing('TracingChannel', function () {
   })
 
   describe('error handler tracing', function () {
-    it('should trace error handlers (fn.length === 4)', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel('express:request').subscribe(handlers)
-
-      router.get('/fail', function (req, res, next) {
-        next(new Error('boom'))
-      })
-
-      router.use(function myErrorHandler (err, req, res, next) { // eslint-disable-line no-unused-vars
-        res.statusCode = 500
-        res.end(err.message)
-      })
-
-      request(server)
-        .get('/fail')
-        .expect(500, 'boom', function (err) {
-          if (err) return done(err)
-
-          const startEvents = events.filter(function (e) { return e.phase === 'start' })
-          const errorHandlerStart = startEvents.find(function (e) {
-            return e.ctx.layer && e.ctx.layer.name === 'myErrorHandler'
-          })
-
-          assert.ok(errorHandlerStart, 'should have start event for error handler')
-          assert.equal(errorHandlerStart.ctx.layer.handle.length, 4)
-
-          done()
-        })
-    })
-
-    it('should not emit error on the originating layer when next(err) is recovered downstream', function (done) {
+    it('should trace error handlers (fn.length === 4) and mark their ctx as handled', function (done) {
       const router = new Router()
       const server = createServer(router)
 
@@ -239,19 +207,69 @@ describeTracing('TracingChannel', function () {
           const failingEvents = events.filter(byLayer('failingHandler'))
           const errorHandlerEvents = events.filter(byLayer('myErrorHandler'))
 
-          assert.ok(failingEvents.some(function (e) { return e.phase === 'start' }),
-            'originating layer should have a start event')
-          assert.ok(!failingEvents.some(function (e) { return e.phase === 'error' }),
-            'originating layer should not emit error — next(err) is normal control flow, not an exception')
+          const errorHandlerStart = errorHandlerEvents.find(function (e) { return e.phase === 'start' })
+          assert.ok(errorHandlerStart, 'should have start event for error handler')
+          assert.equal(errorHandlerStart.ctx.layer.handle.length, 4)
+          assert.equal(errorHandlerStart.ctx.handled, true,
+            'error handler ctx should be marked handled so APMs can dedup the origin error')
+          assert.ok(errorHandlerStart.ctx.error,
+            'error handler ctx should expose the error it received')
 
-          assert.ok(errorHandlerEvents.some(function (e) { return e.phase === 'start' }),
-            'recovering error handler should have a start event')
           assert.ok(!errorHandlerEvents.some(function (e) { return e.phase === 'error' }),
-            'recovering error handler should not emit error — it handled the error successfully')
+            'error handler itself did not throw, so it should not emit error')
+
+          const failingError = failingEvents.find(function (e) { return e.phase === 'error' })
+          assert.ok(failingError, 'origin layer should emit error for next(err)')
+          assert.equal(failingError.ctx.error.message, 'boom')
+          assert.ok(!failingError.ctx.handled,
+            'origin layer ctx is not the handler — should not be marked handled')
+
+          done()
+        })
+    })
+
+    it('should emit error on originating layer when next(err) is recovered downstream', function (done) {
+      const router = new Router()
+      const server = createServer(router)
+
+      dc.tracingChannel('express:request').subscribe(handlers)
+
+      router.get('/fail', function failingHandler (req, res, next) {
+        next(new Error('boom'))
+      })
+
+      router.use(function myErrorHandler (err, req, res, next) { // eslint-disable-line no-unused-vars
+        res.statusCode = 500
+        res.end(err.message)
+      })
+
+      request(server)
+        .get('/fail')
+        .expect(500, 'boom', function (err) {
+          if (err) return done(err)
+
+          const byLayer = function (name) {
+            return function (e) { return e.ctx.layer && e.ctx.layer.name === name }
+          }
+
+          const failingEvents = events.filter(byLayer('failingHandler'))
+          const errorHandlerEvents = events.filter(byLayer('myErrorHandler'))
+
+          const failingError = failingEvents.find(function (e) { return e.phase === 'error' })
+          assert.ok(failingError,
+            'originating layer should emit error — unhandled-at-origin is always observable')
+          assert.equal(failingError.ctx.error.message, 'boom')
+
+          assert.ok(!errorHandlerEvents.some(function (e) { return e.phase === 'error' }),
+            'recovering error handler itself did not throw — should not emit error')
+
+          const errorHandlerStart = errorHandlerEvents.find(function (e) { return e.phase === 'start' })
+          assert.equal(errorHandlerStart.ctx.handled, true,
+            'error handler ctx is marked handled so APMs can dedup against the origin error')
 
           const errorEvents = events.filter(function (e) { return e.phase === 'error' })
-          assert.equal(errorEvents.length, 0,
-            'no error event should fire anywhere when an error is forwarded via next() and recovered downstream')
+          assert.equal(errorEvents.length, 1,
+            'exactly one error event fires — on the origin layer that called next(err)')
 
           done()
         })
@@ -306,7 +324,7 @@ describeTracing('TracingChannel', function () {
         })
     })
 
-    it('should not emit error on the originating layer when next(err) is unhandled', function (done) {
+    it('should emit error on originating layer when next(err) is unhandled', function (done) {
       const router = new Router()
       const server = createServer(router)
 
@@ -325,14 +343,14 @@ describeTracing('TracingChannel', function () {
             return e.ctx.layer && e.ctx.layer.name === 'failingHandler'
           })
 
-          assert.ok(failingEvents.some(function (e) { return e.phase === 'start' }),
-            'originating layer should have a start event')
-          assert.ok(!failingEvents.some(function (e) { return e.phase === 'error' }),
-            'originating layer should not emit error even when no error handler exists — next(err) is not an exception from tracePromise\'s perspective')
+          const failingError = failingEvents.find(function (e) { return e.phase === 'error' })
+          assert.ok(failingError,
+            'unhandled next(err) must be observable on the origin layer')
+          assert.equal(failingError.ctx.error.message, 'unhandled boom')
 
           const errorEvents = events.filter(function (e) { return e.phase === 'error' })
-          assert.equal(errorEvents.length, 0,
-            'no error event fires on the channel when errors are forwarded via next(); APMs relying on this channel cannot detect next(err) errors')
+          assert.equal(errorEvents.length, 1,
+            'exactly one error event fires — on the origin layer that called next(err)')
 
           done()
         })
