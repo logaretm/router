@@ -324,7 +324,7 @@ describeTracing('TracingChannel', function () {
         })
     })
 
-    it('should not emit error for next("route") or next("router") control-flow sentinels', function (done) {
+    it('should not emit error for next("route") control-flow sentinel', function (done) {
       const router = new Router()
       const server = createServer(router)
 
@@ -347,6 +347,34 @@ describeTracing('TracingChannel', function () {
           const errorEvents = events.filter(function (e) { return e.phase === 'error' })
           assert.equal(errorEvents.length, 0,
             'next("route") is a control-flow sentinel, not an error — nothing should publish')
+
+          done()
+        })
+    })
+
+    it('should not emit error for next("router") control-flow sentinel', function (done) {
+      const router = new Router()
+      const server = createServer(router)
+
+      dc.tracingChannel('express:request').subscribe(handlers)
+
+      router.use(function ejectFromRouter (req, res, next) {
+        next('router')
+      })
+
+      router.get('/foo', function shouldNotRun (req, res) {
+        res.statusCode = 200
+        res.end('should not reach')
+      })
+
+      request(server)
+        .get('/foo')
+        .expect(404, function (err) {
+          if (err) return done(err)
+
+          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          assert.equal(errorEvents.length, 0,
+            'next("router") is a control-flow sentinel, not an error — nothing should publish')
 
           done()
         })
