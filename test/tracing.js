@@ -547,11 +547,21 @@ describeTracing('TracingChannel', function () {
           if (err) return done(err)
 
           const errorEvents = events.filter(function (e) { return e.phase === 'error' })
-          const layerNames = errorEvents.map(function (e) { return e.ctx.layer.name })
+          const byName = function (name) {
+            return errorEvents.find(function (e) { return e.ctx.layer.name === name })
+          }
 
           assert.equal(errorEvents.length, 2, 'error should fire on both layers')
-          assert.ok(layerNames.includes('throwingHandler'), 'route layer should emit error')
-          assert.ok(layerNames.includes('throwingErrorHandler'), 'error handler should emit its own error')
+
+          const routeError = byName('throwingHandler')
+          assert.ok(routeError, 'route layer should emit error')
+          assert.ok(!routeError.ctx.handled,
+            'route layer is not an error handler — handled flag must be absent')
+
+          const handlerError = byName('throwingErrorHandler')
+          assert.ok(handlerError, 'error handler should emit its own error')
+          assert.equal(handlerError.ctx.handled, true,
+            'error handler\'s own error event must carry handled:true so APMs can classify the span correctly')
 
           done()
         })
@@ -578,11 +588,21 @@ describeTracing('TracingChannel', function () {
           if (err) return done(err)
 
           const errorEvents = events.filter(function (e) { return e.phase === 'error' })
-          const layerNames = errorEvents.map(function (e) { return e.ctx.layer.name })
+          const byName = function (name) {
+            return errorEvents.find(function (e) { return e.ctx.layer.name === name })
+          }
 
           assert.equal(errorEvents.length, 2, 'error should fire on both layers')
-          assert.ok(layerNames.includes('rejectingHandler'), 'route layer should emit error')
-          assert.ok(layerNames.includes('throwingErrorHandler'), 'error handler should emit its own error')
+
+          const routeError = byName('rejectingHandler')
+          assert.ok(routeError, 'route layer should emit error')
+          assert.ok(!routeError.ctx.handled,
+            'route layer is not an error handler — handled flag must be absent')
+
+          const handlerError = byName('throwingErrorHandler')
+          assert.ok(handlerError, 'error handler should emit its own error')
+          assert.equal(handlerError.ctx.handled, true,
+            'error handler\'s own error event must carry handled:true so APMs can classify the span correctly')
 
           done()
         })
