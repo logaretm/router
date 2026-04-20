@@ -211,6 +211,132 @@ describeTracing('TracingChannel', function () {
           done()
         })
     })
+
+    it('should not emit error on the originating layer when next(err) is recovered downstream', function (done) {
+      const router = new Router()
+      const server = createServer(router)
+
+      dc.tracingChannel('express:request').subscribe(handlers)
+
+      router.get('/fail', function failingHandler (req, res, next) {
+        next(new Error('boom'))
+      })
+
+      router.use(function myErrorHandler (err, req, res, next) { // eslint-disable-line no-unused-vars
+        res.statusCode = 500
+        res.end(err.message)
+      })
+
+      request(server)
+        .get('/fail')
+        .expect(500, 'boom', function (err) {
+          if (err) return done(err)
+
+          const byLayer = function (name) {
+            return function (e) { return e.ctx.layer && e.ctx.layer.name === name }
+          }
+
+          const failingEvents = events.filter(byLayer('failingHandler'))
+          const errorHandlerEvents = events.filter(byLayer('myErrorHandler'))
+
+          assert.ok(failingEvents.some(function (e) { return e.phase === 'start' }),
+            'originating layer should have a start event')
+          assert.ok(!failingEvents.some(function (e) { return e.phase === 'error' }),
+            'originating layer should not emit error — next(err) is normal control flow, not an exception')
+
+          assert.ok(errorHandlerEvents.some(function (e) { return e.phase === 'start' }),
+            'recovering error handler should have a start event')
+          assert.ok(!errorHandlerEvents.some(function (e) { return e.phase === 'error' }),
+            'recovering error handler should not emit error — it handled the error successfully')
+
+          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          assert.equal(errorEvents.length, 0,
+            'no error event should fire anywhere when an error is forwarded via next() and recovered downstream')
+
+          done()
+        })
+    })
+
+    it('should nest the error handler span inside the originating layer span', function (done) {
+      const router = new Router()
+      const server = createServer(router)
+
+      dc.tracingChannel('express:request').subscribe(handlers)
+
+      router.use(function firstMiddleware (req, res, next) {
+        next()
+      })
+
+      router.get('/fail', function failingHandler (req, res, next) {
+        next(new Error('boom'))
+      })
+
+      router.use(function myErrorHandler (err, req, res, next) { // eslint-disable-line no-unused-vars
+        res.statusCode = 500
+        res.end(err.message)
+      })
+
+      request(server)
+        .get('/fail')
+        .expect(500, 'boom', function (err) {
+          if (err) return done(err)
+
+          const syncEvents = events.filter(function (e) {
+            return e.phase === 'start' || e.phase === 'end'
+          }).map(function (e) {
+            return e.phase + ':' + (e.ctx.layer && e.ctx.layer.name)
+          })
+
+          const failingStart = syncEvents.indexOf('start:failingHandler')
+          const failingEnd = syncEvents.indexOf('end:failingHandler')
+          const errorHandlerStart = syncEvents.indexOf('start:myErrorHandler')
+          const errorHandlerEnd = syncEvents.indexOf('end:myErrorHandler')
+
+          assert.notEqual(failingStart, -1, 'failingHandler should have start')
+          assert.notEqual(errorHandlerStart, -1, 'myErrorHandler should have start')
+
+          assert.ok(failingStart < errorHandlerStart,
+            'failing layer start should come before error handler start')
+          assert.ok(errorHandlerStart < errorHandlerEnd,
+            'error handler start should come before its own end')
+          assert.ok(errorHandlerEnd < failingEnd,
+            'error handler end should come before failing layer end — nesting contract: the error handler that runs via next(err) is nested inside the layer that triggered it, letting APMs attribute the error to the correct parent span')
+
+          done()
+        })
+    })
+
+    it('should not emit error on the originating layer when next(err) is unhandled', function (done) {
+      const router = new Router()
+      const server = createServer(router)
+
+      dc.tracingChannel('express:request').subscribe(handlers)
+
+      router.get('/fail', function failingHandler (req, res, next) {
+        next(new Error('unhandled boom'))
+      })
+
+      request(server)
+        .get('/fail')
+        .expect(500, function (err) {
+          if (err) return done(err)
+
+          const failingEvents = events.filter(function (e) {
+            return e.ctx.layer && e.ctx.layer.name === 'failingHandler'
+          })
+
+          assert.ok(failingEvents.some(function (e) { return e.phase === 'start' }),
+            'originating layer should have a start event')
+          assert.ok(!failingEvents.some(function (e) { return e.phase === 'error' }),
+            'originating layer should not emit error even when no error handler exists — next(err) is not an exception from tracePromise\'s perspective')
+
+          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          assert.equal(errorEvents.length, 0,
+            'no error event fires on the channel when errors are forwarded via next(); APMs relying on this channel cannot detect next(err) errors')
+
+          done()
+        })
+    })
   })
 
   describe('error channel', function () {
@@ -263,6 +389,124 @@ describeTracing('TracingChannel', function () {
             return e.ctx.error && e.ctx.error.message === 'async boom'
           })
           assert.ok(errorEvent, 'should have error event with the rejected error')
+
+          done()
+        })
+    })
+
+    it('should emit error on route only when sync throw is recovered by a clean error handler', function (done) {
+      const router = new Router()
+      const server = createServer(router)
+
+      dc.tracingChannel('express:request').subscribe(handlers)
+
+      router.get('/throw', function throwingHandler (req, res) {
+        throw new Error('sync boom')
+      })
+
+      router.use(function cleanErrorHandler (err, req, res, next) { // eslint-disable-line no-unused-vars
+        res.statusCode = 500
+        res.end(err.message)
+      })
+
+      request(server)
+        .get('/throw')
+        .expect(500, 'sync boom', function (err) {
+          if (err) return done(err)
+
+          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          assert.equal(errorEvents.length, 1, 'exactly one error event should fire')
+          assert.equal(errorEvents[0].ctx.layer.name, 'throwingHandler',
+            'error event should belong to the throwing route layer')
+
+          done()
+        })
+    })
+
+    it('should emit error on route only when async reject is recovered by a clean error handler', function (done) {
+      const router = new Router()
+      const server = createServer(router)
+
+      dc.tracingChannel('express:request').subscribe(handlers)
+
+      router.get('/reject', async function rejectingHandler (req, res) {
+        throw new Error('async boom')
+      })
+
+      router.use(function cleanErrorHandler (err, req, res, next) { // eslint-disable-line no-unused-vars
+        res.statusCode = 500
+        res.end(err.message)
+      })
+
+      request(server)
+        .get('/reject')
+        .expect(500, 'async boom', function (err) {
+          if (err) return done(err)
+
+          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          assert.equal(errorEvents.length, 1, 'exactly one error event should fire')
+          assert.equal(errorEvents[0].ctx.layer.name, 'rejectingHandler',
+            'error event should belong to the rejecting route layer')
+
+          done()
+        })
+    })
+
+    it('should emit error on both layers when sync throw is followed by a throwing error handler', function (done) {
+      const router = new Router()
+      const server = createServer(router)
+
+      dc.tracingChannel('express:request').subscribe(handlers)
+
+      router.get('/throw', function throwingHandler (req, res) {
+        throw new Error('sync boom')
+      })
+
+      router.use(function throwingErrorHandler (err, req, res, next) { // eslint-disable-line no-unused-vars
+        throw new Error('handler boom')
+      })
+
+      request(server)
+        .get('/throw')
+        .expect(500, function (err) {
+          if (err) return done(err)
+
+          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          const layerNames = errorEvents.map(function (e) { return e.ctx.layer.name })
+
+          assert.equal(errorEvents.length, 2, 'error should fire on both layers')
+          assert.ok(layerNames.includes('throwingHandler'), 'route layer should emit error')
+          assert.ok(layerNames.includes('throwingErrorHandler'), 'error handler should emit its own error')
+
+          done()
+        })
+    })
+
+    it('should emit error on both layers when async reject is followed by a throwing error handler', function (done) {
+      const router = new Router()
+      const server = createServer(router)
+
+      dc.tracingChannel('express:request').subscribe(handlers)
+
+      router.get('/reject', async function rejectingHandler (req, res) {
+        throw new Error('async boom')
+      })
+
+      router.use(function throwingErrorHandler (err, req, res, next) { // eslint-disable-line no-unused-vars
+        throw new Error('handler boom')
+      })
+
+      request(server)
+        .get('/reject')
+        .expect(500, function (err) {
+          if (err) return done(err)
+
+          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          const layerNames = errorEvents.map(function (e) { return e.ctx.layer.name })
+
+          assert.equal(errorEvents.length, 2, 'error should fire on both layers')
+          assert.ok(layerNames.includes('rejectingHandler'), 'route layer should emit error')
+          assert.ok(layerNames.includes('throwingErrorHandler'), 'error handler should emit its own error')
 
           done()
         })
