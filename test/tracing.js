@@ -324,6 +324,34 @@ describeTracing('TracingChannel', function () {
         })
     })
 
+    it('should not emit error for next("route") or next("router") control-flow sentinels', function (done) {
+      const router = new Router()
+      const server = createServer(router)
+
+      dc.tracingChannel('express:request').subscribe(handlers)
+
+      router.get('/skip', function skipToNextRoute (req, res, next) {
+        next('route')
+      })
+
+      router.get('/skip', function nextRouteHandler (req, res) {
+        res.statusCode = 200
+        res.end('skipped')
+      })
+
+      request(server)
+        .get('/skip')
+        .expect(200, 'skipped', function (err) {
+          if (err) return done(err)
+
+          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          assert.equal(errorEvents.length, 0,
+            'next("route") is a control-flow sentinel, not an error — nothing should publish')
+
+          done()
+        })
+    })
+
     it('should emit error on originating layer when next(err) is unhandled', function (done) {
       const router = new Router()
       const server = createServer(router)
@@ -480,7 +508,8 @@ describeTracing('TracingChannel', function () {
         throw new Error('sync boom')
       })
 
-      router.use(function throwingErrorHandler (err, req, res, next) { // eslint-disable-line no-unused-vars
+      // eslint-disable-next-line no-unused-vars, n/handle-callback-err
+      router.use(function throwingErrorHandler (err, req, res, next) {
         throw new Error('handler boom')
       })
 
@@ -510,7 +539,8 @@ describeTracing('TracingChannel', function () {
         throw new Error('async boom')
       })
 
-      router.use(function throwingErrorHandler (err, req, res, next) { // eslint-disable-line no-unused-vars
+      // eslint-disable-next-line no-unused-vars, n/handle-callback-err
+      router.use(function throwingErrorHandler (err, req, res, next) {
         throw new Error('handler boom')
       })
 
