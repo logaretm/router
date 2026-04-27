@@ -34,7 +34,7 @@ describeTracing('TracingChannel', function () {
   })
 
   afterEach(function () {
-    dc.tracingChannel('pillarjs.router.request').unsubscribe(handlers)
+    dc.tracingChannel('express.router.request').unsubscribe(handlers)
   })
 
   describe('when no subscribers', function () {
@@ -58,7 +58,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('pillarjs.router.request').subscribe(handlers)
+      dc.tracingChannel('express.router.request').subscribe(handlers)
 
       router.use(function myMiddleware (req, res, next) {
         next()
@@ -93,7 +93,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('pillarjs.router.request').subscribe(handlers)
+      dc.tracingChannel('express.router.request').subscribe(handlers)
 
       router.use(function (req, res, next) {
         next()
@@ -126,7 +126,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('pillarjs.router.request').subscribe(handlers)
+      dc.tracingChannel('express.router.request').subscribe(handlers)
 
       router.get('/users/:id', function getUser (req, res) {
         res.statusCode = 200
@@ -155,7 +155,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('pillarjs.router.request').subscribe(handlers)
+      dc.tracingChannel('express.router.request').subscribe(handlers)
 
       router.get('/foo', function myHandler (req, res) {
         res.statusCode = 200
@@ -184,7 +184,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('pillarjs.router.request').subscribe(handlers)
+      dc.tracingChannel('express.router.request').subscribe(handlers)
 
       router.get('/fail', function failingHandler (req, res, next) {
         next(new Error('boom'))
@@ -232,7 +232,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('pillarjs.router.request').subscribe(handlers)
+      dc.tracingChannel('express.router.request').subscribe(handlers)
 
       router.get('/fail', function failingHandler (req, res, next) {
         next(new Error('boom'))
@@ -279,7 +279,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('pillarjs.router.request').subscribe(handlers)
+      dc.tracingChannel('express.router.request').subscribe(handlers)
 
       router.use(function firstMiddleware (req, res, next) {
         next()
@@ -328,7 +328,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('pillarjs.router.request').subscribe(handlers)
+      dc.tracingChannel('express.router.request').subscribe(handlers)
 
       router.get('/skip', function skipToNextRoute (req, res, next) {
         next('route')
@@ -356,7 +356,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('pillarjs.router.request').subscribe(handlers)
+      dc.tracingChannel('express.router.request').subscribe(handlers)
 
       router.use(function ejectFromRouter (req, res, next) {
         next('router')
@@ -384,7 +384,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('pillarjs.router.request').subscribe(handlers)
+      dc.tracingChannel('express.router.request').subscribe(handlers)
 
       router.get('/fail', function failingHandler (req, res, next) {
         next(new Error('unhandled boom'))
@@ -418,7 +418,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('pillarjs.router.request').subscribe(handlers)
+      dc.tracingChannel('express.router.request').subscribe(handlers)
 
       router.get('/throw', function (req, res) {
         throw new Error('sync boom')
@@ -445,7 +445,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('pillarjs.router.request').subscribe(handlers)
+      dc.tracingChannel('express.router.request').subscribe(handlers)
 
       router.get('/reject', async function (req, res) {
         throw new Error('async boom')
@@ -472,7 +472,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('pillarjs.router.request').subscribe(handlers)
+      dc.tracingChannel('express.router.request').subscribe(handlers)
 
       router.get('/throw', function throwingHandler (req, res) {
         throw new Error('sync boom')
@@ -501,7 +501,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('pillarjs.router.request').subscribe(handlers)
+      dc.tracingChannel('express.router.request').subscribe(handlers)
 
       router.get('/reject', async function rejectingHandler (req, res) {
         throw new Error('async boom')
@@ -530,7 +530,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('pillarjs.router.request').subscribe(handlers)
+      dc.tracingChannel('express.router.request').subscribe(handlers)
 
       router.get('/throw', function throwingHandler (req, res) {
         throw new Error('sync boom')
@@ -571,7 +571,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('pillarjs.router.request').subscribe(handlers)
+      dc.tracingChannel('express.router.request').subscribe(handlers)
 
       router.get('/reject', async function rejectingHandler (req, res) {
         throw new Error('async boom')
@@ -614,7 +614,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('pillarjs.router.request').subscribe(handlers)
+      dc.tracingChannel('express.router.request').subscribe(handlers)
 
       router.get('/async', function asyncHandler (req, res) {
         return new Promise(function (resolve) {
@@ -648,7 +648,7 @@ describeTracing('TracingChannel', function () {
       const nested = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('pillarjs.router.request').subscribe(handlers)
+      dc.tracingChannel('express.router.request').subscribe(handlers)
 
       nested.get('/bar', function nestedHandler (req, res) {
         res.statusCode = 200
@@ -679,7 +679,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('pillarjs.router.request').subscribe(handlers)
+      dc.tracingChannel('express.router.request').subscribe(handlers)
 
       router.get('/order', function (req, res) {
         res.statusCode = 200
@@ -709,7 +709,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('pillarjs.router.request').subscribe(handlers)
+      dc.tracingChannel('express.router.request').subscribe(handlers)
 
       router.use(function first (req, res, next) {
         next()

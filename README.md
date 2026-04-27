@@ -404,7 +404,7 @@ server.listen(8080)
 
 `router` integrates with Node.js [`diagnostics_channel`](https://nodejs.org/api/diagnostics_channel.html)
 via a [`TracingChannel`](https://nodejs.org/api/diagnostics_channel.html#class-tracingchannel)
-named `pillarjs.router.request`. This lets observability tools (APMs, tracers,
+named `express.router.request`. This lets observability tools (APMs, tracers,
 loggers) hook into middleware and route handler execution without monkey-patching.
 
 Each layer's handler invocation publishes the standard tracing channel sub-events
@@ -427,7 +427,7 @@ context allocation or channel publishing overhead on the hot path.
 ```js
 const dc = require('node:diagnostics_channel')
 
-const channel = dc.tracingChannel('pillarjs.router.request')
+const channel = dc.tracingChannel('express.router.request')
 
 channel.subscribe({
   start (ctx) {
