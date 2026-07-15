@@ -414,12 +414,14 @@ contains:
 - `req`: the incoming `http.IncomingMessage`
 - `res`: the `http.ServerResponse`
 - `layer`: the internal `Layer` instance being invoked (exposes `.name`, `.path`, `.handle`, etc.). Note that `Layer` is an internal implementation detail and its shape may change between releases.
-- `error`: the error passed to `next(err)`, when applicable
+- `error`: the error the layer failed with, when applicable
 - `handled`: `true` when the layer is an error-handling middleware (4-arg signature)
 
-The `error` event is also published when a handler calls `next(err)` with a real
-error. The control-flow sentinels `'route'` and `'router'` are not treated as
-errors and will not publish to the `error` channel.
+The `error` event is published once, on the layer where the error originates,
+whether the handler calls `next(err)`, throws, or returns a rejected promise. An
+error bubbling up through outer layers is not reported again. The `'route'` and
+`'router'` routing signals are not treated as errors and will not publish to the
+`error` channel.
 
 When no subscribers are attached, tracing is bypassed entirely, so there is no
 context allocation or channel publishing overhead on the hot path.
