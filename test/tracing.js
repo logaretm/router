@@ -222,7 +222,7 @@ describeTracing('TracingChannel', function () {
           assert.ok(failingError, 'origin layer should emit error for next(err)')
           assert.equal(failingError.ctx.error.message, 'boom')
           assert.ok(!failingError.ctx.handled,
-            'origin layer ctx is not the handler — should not be marked handled')
+            'origin layer ctx is not the handler, so it should not be marked handled')
 
           done()
         })
@@ -257,11 +257,11 @@ describeTracing('TracingChannel', function () {
 
           const failingError = failingEvents.find(function (e) { return e.phase === 'error' })
           assert.ok(failingError,
-            'originating layer should emit error — unhandled-at-origin is always observable')
+            'originating layer should emit error, since unhandled-at-origin is always observable')
           assert.equal(failingError.ctx.error.message, 'boom')
 
           assert.ok(!errorHandlerEvents.some(function (e) { return e.phase === 'error' }),
-            'recovering error handler itself did not throw — should not emit error')
+            'recovering error handler itself did not throw, so it should not emit error')
 
           const errorHandlerStart = errorHandlerEvents.find(function (e) { return e.phase === 'start' })
           assert.equal(errorHandlerStart.ctx.handled, true,
@@ -269,7 +269,7 @@ describeTracing('TracingChannel', function () {
 
           const errorEvents = events.filter(function (e) { return e.phase === 'error' })
           assert.equal(errorEvents.length, 1,
-            'exactly one error event fires — on the origin layer that called next(err)')
+            'exactly one error event fires, on the origin layer that called next(err)')
 
           done()
         })
@@ -318,13 +318,13 @@ describeTracing('TracingChannel', function () {
           assert.ok(errorHandlerStart < errorHandlerEnd,
             'error handler start should come before its own end')
           assert.ok(errorHandlerEnd < failingEnd,
-            'error handler end should come before failing layer end — nesting contract: the error handler that runs via next(err) is nested inside the layer that triggered it, letting APMs attribute the error to the correct parent span')
+            'error handler end should come before failing layer end. Nesting contract: the error handler that runs via next(err) is nested inside the layer that triggered it, letting APMs attribute the error to the correct parent span')
 
           done()
         })
     })
 
-    it('should not emit error for next("route") control-flow sentinel', function (done) {
+    it('should not emit error for next("route") routing signal', function (done) {
       const router = new Router()
       const server = createServer(router)
 
@@ -346,13 +346,13 @@ describeTracing('TracingChannel', function () {
 
           const errorEvents = events.filter(function (e) { return e.phase === 'error' })
           assert.equal(errorEvents.length, 0,
-            'next("route") is a control-flow sentinel, not an error — nothing should publish')
+            'next("route") is a routing signal, not an error, so nothing should publish')
 
           done()
         })
     })
 
-    it('should not emit error for next("router") control-flow sentinel', function (done) {
+    it('should not emit error for next("router") routing signal', function (done) {
       const router = new Router()
       const server = createServer(router)
 
@@ -374,7 +374,63 @@ describeTracing('TracingChannel', function () {
 
           const errorEvents = events.filter(function (e) { return e.phase === 'error' })
           assert.equal(errorEvents.length, 0,
-            'next("router") is a control-flow sentinel, not an error — nothing should publish')
+            'next("router") is a routing signal, not an error, so nothing should publish')
+
+          done()
+        })
+    })
+
+    it('should not emit error when a handler throws the "route" routing signal', function (done) {
+      const router = new Router()
+      const server = createServer(router)
+
+      dc.tracingChannel('express.router.request').subscribe(handlers)
+
+      router.get('/skip', function throwRoute (req, res) {
+        throw 'route' // eslint-disable-line no-throw-literal
+      })
+
+      router.get('/skip', function nextRouteHandler (req, res) {
+        res.statusCode = 200
+        res.end('skipped')
+      })
+
+      request(server)
+        .get('/skip')
+        .expect(200, 'skipped', function (err) {
+          if (err) return done(err)
+
+          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          assert.equal(errorEvents.length, 0,
+            'a thrown "route" routing signal is not an error, so nothing should publish')
+
+          done()
+        })
+    })
+
+    it('should not emit error when a handler throws the "router" routing signal', function (done) {
+      const router = new Router()
+      const server = createServer(router)
+
+      dc.tracingChannel('express.router.request').subscribe(handlers)
+
+      router.use(function throwRouter (req, res) {
+        throw 'router' // eslint-disable-line no-throw-literal
+      })
+
+      router.get('/foo', function shouldNotRun (req, res) {
+        res.statusCode = 200
+        res.end('should not reach')
+      })
+
+      request(server)
+        .get('/foo')
+        .expect(404, function (err) {
+          if (err) return done(err)
+
+          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          assert.equal(errorEvents.length, 0,
+            'a thrown "router" routing signal is not an error, so nothing should publish')
 
           done()
         })
@@ -406,7 +462,7 @@ describeTracing('TracingChannel', function () {
 
           const errorEvents = events.filter(function (e) { return e.phase === 'error' })
           assert.equal(errorEvents.length, 1,
-            'exactly one error event fires — on the origin layer that called next(err)')
+            'exactly one error event fires, on the origin layer that called next(err)')
 
           done()
         })
@@ -556,7 +612,7 @@ describeTracing('TracingChannel', function () {
           const routeError = byName('throwingHandler')
           assert.ok(routeError, 'route layer should emit error')
           assert.ok(!routeError.ctx.handled,
-            'route layer is not an error handler — handled flag must be absent')
+            'route layer is not an error handler, so handled flag must be absent')
 
           const handlerError = byName('throwingErrorHandler')
           assert.ok(handlerError, 'error handler should emit its own error')
@@ -597,7 +653,7 @@ describeTracing('TracingChannel', function () {
           const routeError = byName('rejectingHandler')
           assert.ok(routeError, 'route layer should emit error')
           assert.ok(!routeError.ctx.handled,
-            'route layer is not an error handler — handled flag must be absent')
+            'route layer is not an error handler, so handled flag must be absent')
 
           const handlerError = byName('throwingErrorHandler')
           assert.ok(handlerError, 'error handler should emit its own error')
