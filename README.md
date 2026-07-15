@@ -415,7 +415,7 @@ contains:
 - `res`: the `http.ServerResponse`
 - `layer`: the internal `Layer` instance being invoked (exposes `.name`, `.path`, `.handle`, etc.). Note that `Layer` is an internal implementation detail and its shape may change between releases.
 - `error`: the error the layer failed with, when applicable
-- `handled`: `true` when the layer is an error-handling middleware (4-arg signature)
+- `errorHandler`: `true` when the layer is an error-handling middleware (4-arg signature)
 
 The `error` event is published once, on the layer where the error originates,
 whether the handler calls `next(err)`, throws, or returns a rejected promise. An

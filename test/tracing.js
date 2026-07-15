@@ -178,7 +178,7 @@ describeTracing('TracingChannel', function () {
   })
 
   describe('error handler tracing', function () {
-    it('should trace error handlers (fn.length === 4) and mark their ctx as handled', function (done) {
+    it('should trace error handlers (fn.length === 4) and flag their ctx as errorHandler', function (done) {
       const { router, server } = traced()
 
       router.get('/fail', function failingHandler (req, res, next) {
@@ -201,8 +201,8 @@ describeTracing('TracingChannel', function () {
           const errorHandlerStart = errorHandlerEvents.find(byPhase('start'))
           assert.ok(errorHandlerStart, 'should have start event for error handler')
           assert.equal(errorHandlerStart.ctx.layer.handle.length, 4)
-          assert.equal(errorHandlerStart.ctx.handled, true,
-            'error handler ctx should be marked handled so APMs can dedup the origin error')
+          assert.equal(errorHandlerStart.ctx.errorHandler, true,
+            'error handler ctx should be flagged errorHandler so APMs can dedup the origin error')
           assert.ok(errorHandlerStart.ctx.error,
             'error handler ctx should expose the error it received')
 
@@ -212,8 +212,8 @@ describeTracing('TracingChannel', function () {
           const failingError = failingEvents.find(byPhase('error'))
           assert.ok(failingError, 'origin layer should emit error for next(err)')
           assert.equal(failingError.ctx.error.message, 'boom')
-          assert.ok(!failingError.ctx.handled,
-            'origin layer ctx is not the handler, so it should not be marked handled')
+          assert.ok(!failingError.ctx.errorHandler,
+            'origin layer is not an error handler, so it should not be flagged errorHandler')
 
           done()
         })
@@ -248,8 +248,8 @@ describeTracing('TracingChannel', function () {
             'recovering error handler itself did not throw, so it should not emit error')
 
           const errorHandlerStart = errorHandlerEvents.find(byPhase('start'))
-          assert.equal(errorHandlerStart.ctx.handled, true,
-            'error handler ctx is marked handled so APMs can dedup against the origin error')
+          assert.equal(errorHandlerStart.ctx.errorHandler, true,
+            'error handler ctx is flagged errorHandler so APMs can dedup against the origin error')
 
           const errorEvents = events.filter(byPhase('error'))
           assert.equal(errorEvents.length, 1,
@@ -608,13 +608,13 @@ describeTracing('TracingChannel', function () {
 
           const routeError = errorEvents.find(byLayer('throwingHandler'))
           assert.ok(routeError, 'route layer should emit error')
-          assert.ok(!routeError.ctx.handled,
-            'route layer is not an error handler, so handled flag must be absent')
+          assert.ok(!routeError.ctx.errorHandler,
+            'route layer is not an error handler, so errorHandler flag must be absent')
 
           const handlerError = errorEvents.find(byLayer('throwingErrorHandler'))
           assert.ok(handlerError, 'error handler should emit its own error')
-          assert.equal(handlerError.ctx.handled, true,
-            'error handler\'s own error event must carry handled:true so APMs can classify the span correctly')
+          assert.equal(handlerError.ctx.errorHandler, true,
+            'error handler\'s own error event must carry errorHandler:true so APMs can classify the span correctly')
 
           done()
         })
@@ -643,13 +643,13 @@ describeTracing('TracingChannel', function () {
 
           const routeError = errorEvents.find(byLayer('rejectingHandler'))
           assert.ok(routeError, 'route layer should emit error')
-          assert.ok(!routeError.ctx.handled,
-            'route layer is not an error handler, so handled flag must be absent')
+          assert.ok(!routeError.ctx.errorHandler,
+            'route layer is not an error handler, so errorHandler flag must be absent')
 
           const handlerError = errorEvents.find(byLayer('throwingErrorHandler'))
           assert.ok(handlerError, 'error handler should emit its own error')
-          assert.equal(handlerError.ctx.handled, true,
-            'error handler\'s own error event must carry handled:true so APMs can classify the span correctly')
+          assert.equal(handlerError.ctx.errorHandler, true,
+            'error handler\'s own error event must carry errorHandler:true so APMs can classify the span correctly')
 
           done()
         })
