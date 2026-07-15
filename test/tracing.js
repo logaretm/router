@@ -545,6 +545,34 @@ describeTracing('TracingChannel', function () {
         })
     })
 
+    it('should keep routing after a sync falsy throw, same as the untraced path', function (done) {
+      const router = new Router()
+      const server = createServer(router)
+
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
+
+      router.get('/falsy', function throwsFalsy (req, res) {
+        throw undefined // eslint-disable-line no-throw-literal
+      })
+
+      router.get('/falsy', function continues (req, res) {
+        res.statusCode = 200
+        res.end('continued')
+      })
+
+      request(server)
+        .get('/falsy')
+        .expect(200, 'continued', function (err) {
+          if (err) return done(err)
+
+          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          assert.equal(errorEvents.length, 0,
+            'the untraced router treats a sync falsy throw as next(), so subscribing must not divert it to error handling')
+
+          done()
+        })
+    })
+
     it('should emit error on route only when sync throw is recovered by a clean error handler', function (done) {
       const router = new Router()
       const server = createServer(router)
@@ -894,6 +922,37 @@ describeTracing('TracingChannel', function () {
           const errorEvents = events.filter(function (e) { return e.phase === 'error' })
           assert.equal(errorEvents.length, 1,
             'forwarding the same error with next(err) must not re-report it')
+          assert.equal(errorEvents[0].ctx.layer.name, 'origin')
+
+          done()
+        })
+    })
+
+    it('should report next(err) once when an error handler rethrows it', function (done) {
+      const router = new Router()
+      const server = createServer(router)
+
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
+
+      router.get('/fail', function origin (req, res, next) {
+        next(new Error('boom'))
+      })
+      router.use(function rethrowing (err, req, res, next) { // eslint-disable-line no-unused-vars
+        throw err
+      })
+      router.use(function recover (err, req, res, next) { // eslint-disable-line no-unused-vars
+        res.statusCode = 500
+        res.end(err.message)
+      })
+
+      request(server)
+        .get('/fail')
+        .expect(500, 'boom', function (err) {
+          if (err) return done(err)
+
+          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          assert.equal(errorEvents.length, 1,
+            'throw err and next(err) are equivalent to the router, so rethrowing the same error must not re-report it')
           assert.equal(errorEvents[0].ctx.layer.name, 'origin')
 
           done()
