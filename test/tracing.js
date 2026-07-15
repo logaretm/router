@@ -674,6 +674,162 @@ describeTracing('TracingChannel', function () {
     })
   })
 
+  describe('error deduplication', function () {
+    it('should report a next(err) error once, on the origin layer, across mounted routers', function (done) {
+      const outer = new Router()
+      const nested = new Router()
+      const server = createServer(outer)
+
+      dc.tracingChannel('express.router.request').subscribe(handlers)
+
+      nested.get('/bar', function innerHandler (req, res, next) {
+        next(new Error('boom'))
+      })
+      outer.use('/foo', nested)
+      outer.use(function recover (err, req, res, next) { // eslint-disable-line no-unused-vars
+        res.statusCode = 500
+        res.end(err.message)
+      })
+
+      request(server)
+        .get('/foo/bar')
+        .expect(500, 'boom', function (err) {
+          if (err) return done(err)
+
+          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          assert.equal(errorEvents.length, 1,
+            'the same error bubbling through the mounted router must be reported once')
+          assert.equal(errorEvents[0].ctx.layer.name, 'innerHandler',
+            'the single error event belongs to the origin layer')
+
+          done()
+        })
+    })
+
+    it('should report a next(err) error once across two mount levels', function (done) {
+      const outer = new Router()
+      const mid = new Router()
+      const deep = new Router()
+      const server = createServer(outer)
+
+      dc.tracingChannel('express.router.request').subscribe(handlers)
+
+      deep.get('/baz', function deepHandler (req, res, next) {
+        next(new Error('boom'))
+      })
+      mid.use('/bar', deep)
+      outer.use('/foo', mid)
+      outer.use(function recover (err, req, res, next) { // eslint-disable-line no-unused-vars
+        res.statusCode = 500
+        res.end(err.message)
+      })
+
+      request(server)
+        .get('/foo/bar/baz')
+        .expect(500, 'boom', function (err) {
+          if (err) return done(err)
+
+          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          assert.equal(errorEvents.length, 1,
+            'the error must not be re-reported at each ancestor router')
+          assert.equal(errorEvents[0].ctx.layer.name, 'deepHandler')
+
+          done()
+        })
+    })
+
+    it('should report a thrown error once across mounted routers', function (done) {
+      const outer = new Router()
+      const nested = new Router()
+      const server = createServer(outer)
+
+      dc.tracingChannel('express.router.request').subscribe(handlers)
+
+      nested.get('/bar', function innerThrow (req, res) {
+        throw new Error('boom')
+      })
+      outer.use('/foo', nested)
+      outer.use(function recover (err, req, res, next) { // eslint-disable-line no-unused-vars
+        res.statusCode = 500
+        res.end(err.message)
+      })
+
+      request(server)
+        .get('/foo/bar')
+        .expect(500, 'boom', function (err) {
+          if (err) return done(err)
+
+          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          assert.equal(errorEvents.length, 1,
+            'a thrown error must be reported once, at its origin')
+          assert.equal(errorEvents[0].ctx.layer.name, 'innerThrow')
+
+          done()
+        })
+    })
+
+    it('should report a rejected error once across mounted routers', function (done) {
+      const outer = new Router()
+      const nested = new Router()
+      const server = createServer(outer)
+
+      dc.tracingChannel('express.router.request').subscribe(handlers)
+
+      nested.get('/bar', async function innerReject (req, res) {
+        throw new Error('boom')
+      })
+      outer.use('/foo', nested)
+      outer.use(function recover (err, req, res, next) { // eslint-disable-line no-unused-vars
+        res.statusCode = 500
+        res.end(err.message)
+      })
+
+      request(server)
+        .get('/foo/bar')
+        .expect(500, 'boom', function (err) {
+          if (err) return done(err)
+
+          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          assert.equal(errorEvents.length, 1,
+            'a rejected error must be reported once, at its origin')
+          assert.equal(errorEvents[0].ctx.layer.name, 'innerReject')
+
+          done()
+        })
+    })
+
+    it('should report next(err) once when an error handler forwards it', function (done) {
+      const router = new Router()
+      const server = createServer(router)
+
+      dc.tracingChannel('express.router.request').subscribe(handlers)
+
+      router.get('/fail', function origin (req, res, next) {
+        next(new Error('boom'))
+      })
+      router.use(function forwarding (err, req, res, next) {
+        next(err)
+      })
+      router.use(function recover (err, req, res, next) { // eslint-disable-line no-unused-vars
+        res.statusCode = 500
+        res.end(err.message)
+      })
+
+      request(server)
+        .get('/fail')
+        .expect(500, 'boom', function (err) {
+          if (err) return done(err)
+
+          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          assert.equal(errorEvents.length, 1,
+            'forwarding the same error with next(err) must not re-report it')
+          assert.equal(errorEvents[0].ctx.layer.name, 'origin')
+
+          done()
+        })
+    })
+  })
+
   describe('event ordering', function () {
     it('should emit start before asyncEnd', function (done) {
       const router = new Router()
