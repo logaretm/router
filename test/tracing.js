@@ -39,6 +39,14 @@ describeTracing('TracingChannel', function () {
     dc.tracingChannel(CHANNEL).unsubscribe(handlers)
   })
 
+  // Build a router and server with the tracing handlers subscribed.
+  function traced () {
+    const router = new Router()
+    const server = createServer(router)
+    dc.tracingChannel(CHANNEL).subscribe(handlers)
+    return { router, server }
+  }
+
   describe('when no subscribers', function () {
     it('should not affect normal behavior', function (done) {
       const router = new Router()
@@ -57,10 +65,7 @@ describeTracing('TracingChannel', function () {
 
   describe('context shape', function () {
     it('should provide req, res, and layer in context', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.use(function myMiddleware (req, res, next) {
         next()
@@ -76,7 +81,7 @@ describeTracing('TracingChannel', function () {
         .expect(200, function (err) {
           if (err) return done(err)
 
-          const startEvents = events.filter(function (e) { return e.phase === 'start' })
+          const startEvents = events.filter(byPhase('start'))
           const middlewareStart = startEvents.find(function (e) {
             return e.ctx.layer && e.ctx.layer.name === 'myMiddleware'
           })
@@ -92,10 +97,7 @@ describeTracing('TracingChannel', function () {
     })
 
     it('should have layer.name as <anonymous> for unnamed middleware', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.use(function (req, res, next) {
         next()
@@ -111,7 +113,7 @@ describeTracing('TracingChannel', function () {
         .expect(200, function (err) {
           if (err) return done(err)
 
-          const startEvents = events.filter(function (e) { return e.phase === 'start' })
+          const startEvents = events.filter(byPhase('start'))
           const anonMiddleware = startEvents.find(function (e) {
             return e.ctx.layer && e.ctx.layer.name === '<anonymous>'
           })
@@ -125,10 +127,7 @@ describeTracing('TracingChannel', function () {
 
   describe('route handler tracing', function () {
     it('should have req.route set for route handlers', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.get('/users/:id', function getUser (req, res) {
         res.statusCode = 200
@@ -140,7 +139,7 @@ describeTracing('TracingChannel', function () {
         .expect(200, function (err) {
           if (err) return done(err)
 
-          const startEvents = events.filter(function (e) { return e.phase === 'start' })
+          const startEvents = events.filter(byPhase('start'))
           const handlerStart = startEvents.find(function (e) {
             return e.ctx.layer && e.ctx.layer.name === 'getUser'
           })
@@ -154,10 +153,7 @@ describeTracing('TracingChannel', function () {
     })
 
     it('should not trace the route dispatch wrapper', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.get('/foo', function myHandler (req, res) {
         res.statusCode = 200
@@ -169,7 +165,7 @@ describeTracing('TracingChannel', function () {
         .expect(200, function (err) {
           if (err) return done(err)
 
-          const startEvents = events.filter(function (e) { return e.phase === 'start' })
+          const startEvents = events.filter(byPhase('start'))
           const dispatchWrapper = startEvents.find(function (e) {
             return e.ctx.layer && e.ctx.layer.name === 'handle'
           })
@@ -183,10 +179,7 @@ describeTracing('TracingChannel', function () {
 
   describe('error handler tracing', function () {
     it('should trace error handlers (fn.length === 4) and mark their ctx as handled', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.get('/fail', function failingHandler (req, res, next) {
         next(new Error('boom'))
@@ -205,7 +198,7 @@ describeTracing('TracingChannel', function () {
           const failingEvents = events.filter(byLayer('failingHandler'))
           const errorHandlerEvents = events.filter(byLayer('myErrorHandler'))
 
-          const errorHandlerStart = errorHandlerEvents.find(function (e) { return e.phase === 'start' })
+          const errorHandlerStart = errorHandlerEvents.find(byPhase('start'))
           assert.ok(errorHandlerStart, 'should have start event for error handler')
           assert.equal(errorHandlerStart.ctx.layer.handle.length, 4)
           assert.equal(errorHandlerStart.ctx.handled, true,
@@ -213,10 +206,10 @@ describeTracing('TracingChannel', function () {
           assert.ok(errorHandlerStart.ctx.error,
             'error handler ctx should expose the error it received')
 
-          assert.ok(!errorHandlerEvents.some(function (e) { return e.phase === 'error' }),
+          assert.ok(!errorHandlerEvents.some(byPhase('error')),
             'error handler itself did not throw, so it should not emit error')
 
-          const failingError = failingEvents.find(function (e) { return e.phase === 'error' })
+          const failingError = failingEvents.find(byPhase('error'))
           assert.ok(failingError, 'origin layer should emit error for next(err)')
           assert.equal(failingError.ctx.error.message, 'boom')
           assert.ok(!failingError.ctx.handled,
@@ -227,10 +220,7 @@ describeTracing('TracingChannel', function () {
     })
 
     it('should emit error on originating layer when next(err) is recovered downstream', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.get('/fail', function failingHandler (req, res, next) {
         next(new Error('boom'))
@@ -249,19 +239,19 @@ describeTracing('TracingChannel', function () {
           const failingEvents = events.filter(byLayer('failingHandler'))
           const errorHandlerEvents = events.filter(byLayer('myErrorHandler'))
 
-          const failingError = failingEvents.find(function (e) { return e.phase === 'error' })
+          const failingError = failingEvents.find(byPhase('error'))
           assert.ok(failingError,
             'originating layer should emit error, since unhandled-at-origin is always observable')
           assert.equal(failingError.ctx.error.message, 'boom')
 
-          assert.ok(!errorHandlerEvents.some(function (e) { return e.phase === 'error' }),
+          assert.ok(!errorHandlerEvents.some(byPhase('error')),
             'recovering error handler itself did not throw, so it should not emit error')
 
-          const errorHandlerStart = errorHandlerEvents.find(function (e) { return e.phase === 'start' })
+          const errorHandlerStart = errorHandlerEvents.find(byPhase('start'))
           assert.equal(errorHandlerStart.ctx.handled, true,
             'error handler ctx is marked handled so APMs can dedup against the origin error')
 
-          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          const errorEvents = events.filter(byPhase('error'))
           assert.equal(errorEvents.length, 1,
             'exactly one error event fires, on the origin layer that called next(err)')
 
@@ -270,10 +260,7 @@ describeTracing('TracingChannel', function () {
     })
 
     it('should nest the error handler span inside the originating layer span', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.use(function firstMiddleware (req, res, next) {
         next()
@@ -319,10 +306,7 @@ describeTracing('TracingChannel', function () {
     })
 
     it('should not emit error for next("route") routing signal', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.get('/skip', function skipToNextRoute (req, res, next) {
         next('route')
@@ -338,7 +322,7 @@ describeTracing('TracingChannel', function () {
         .expect(200, 'skipped', function (err) {
           if (err) return done(err)
 
-          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          const errorEvents = events.filter(byPhase('error'))
           assert.equal(errorEvents.length, 0,
             'next("route") is a routing signal, not an error, so nothing should publish')
 
@@ -347,10 +331,7 @@ describeTracing('TracingChannel', function () {
     })
 
     it('should not emit error for next("router") routing signal', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.use(function ejectFromRouter (req, res, next) {
         next('router')
@@ -366,7 +347,7 @@ describeTracing('TracingChannel', function () {
         .expect(404, function (err) {
           if (err) return done(err)
 
-          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          const errorEvents = events.filter(byPhase('error'))
           assert.equal(errorEvents.length, 0,
             'next("router") is a routing signal, not an error, so nothing should publish')
 
@@ -375,10 +356,7 @@ describeTracing('TracingChannel', function () {
     })
 
     it('should not emit error when a handler throws the "route" routing signal', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.get('/skip', function throwRoute (req, res) {
         throw 'route' // eslint-disable-line no-throw-literal
@@ -394,7 +372,7 @@ describeTracing('TracingChannel', function () {
         .expect(200, 'skipped', function (err) {
           if (err) return done(err)
 
-          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          const errorEvents = events.filter(byPhase('error'))
           assert.equal(errorEvents.length, 0,
             'a thrown "route" routing signal is not an error, so nothing should publish')
 
@@ -403,10 +381,7 @@ describeTracing('TracingChannel', function () {
     })
 
     it('should not emit error when a handler throws the "router" routing signal', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.use(function throwRouter (req, res) {
         throw 'router' // eslint-disable-line no-throw-literal
@@ -422,7 +397,7 @@ describeTracing('TracingChannel', function () {
         .expect(404, function (err) {
           if (err) return done(err)
 
-          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          const errorEvents = events.filter(byPhase('error'))
           assert.equal(errorEvents.length, 0,
             'a thrown "router" routing signal is not an error, so nothing should publish')
 
@@ -431,10 +406,7 @@ describeTracing('TracingChannel', function () {
     })
 
     it('should emit error on originating layer when next(err) is unhandled', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.get('/fail', function failingHandler (req, res, next) {
         next(new Error('unhandled boom'))
@@ -449,12 +421,12 @@ describeTracing('TracingChannel', function () {
             return e.ctx.layer && e.ctx.layer.name === 'failingHandler'
           })
 
-          const failingError = failingEvents.find(function (e) { return e.phase === 'error' })
+          const failingError = failingEvents.find(byPhase('error'))
           assert.ok(failingError,
             'unhandled next(err) must be observable on the origin layer')
           assert.equal(failingError.ctx.error.message, 'unhandled boom')
 
-          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          const errorEvents = events.filter(byPhase('error'))
           assert.equal(errorEvents.length, 1,
             'exactly one error event fires, on the origin layer that called next(err)')
 
@@ -465,10 +437,7 @@ describeTracing('TracingChannel', function () {
 
   describe('error channel', function () {
     it('should emit error when handler throws synchronously', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.get('/throw', function (req, res) {
         throw new Error('sync boom')
@@ -479,7 +448,7 @@ describeTracing('TracingChannel', function () {
         .expect(500, function (err) {
           if (err) return done(err)
 
-          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          const errorEvents = events.filter(byPhase('error'))
           assert.ok(errorEvents.length > 0, 'should have error events')
 
           const errorEvent = errorEvents.find(function (e) {
@@ -492,10 +461,7 @@ describeTracing('TracingChannel', function () {
     })
 
     it('should emit error when async handler rejects', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.get('/reject', async function (req, res) {
         throw new Error('async boom')
@@ -506,7 +472,7 @@ describeTracing('TracingChannel', function () {
         .expect(500, function (err) {
           if (err) return done(err)
 
-          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          const errorEvents = events.filter(byPhase('error'))
           assert.ok(errorEvents.length > 0, 'should have error events')
 
           const errorEvent = errorEvents.find(function (e) {
@@ -519,10 +485,7 @@ describeTracing('TracingChannel', function () {
     })
 
     it('should normalize a falsy rejection to the error the router forwards', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.get('/reject', async function rejectFalsy (req, res) {
         return Promise.reject() // eslint-disable-line prefer-promise-reject-errors
@@ -533,7 +496,7 @@ describeTracing('TracingChannel', function () {
         .expect(500, function (err) {
           if (err) return done(err)
 
-          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          const errorEvents = events.filter(byPhase('error'))
           assert.equal(errorEvents.length, 1, 'should report the rejection once')
 
           const reported = errorEvents[0].ctx.error
@@ -546,10 +509,7 @@ describeTracing('TracingChannel', function () {
     })
 
     it('should keep routing after a sync falsy throw, same as the untraced path', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.get('/falsy', function throwsFalsy (req, res) {
         throw undefined // eslint-disable-line no-throw-literal
@@ -565,7 +525,7 @@ describeTracing('TracingChannel', function () {
         .expect(200, 'continued', function (err) {
           if (err) return done(err)
 
-          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          const errorEvents = events.filter(byPhase('error'))
           assert.equal(errorEvents.length, 0,
             'the untraced router treats a sync falsy throw as next(), so subscribing must not divert it to error handling')
 
@@ -574,10 +534,7 @@ describeTracing('TracingChannel', function () {
     })
 
     it('should emit error on route only when sync throw is recovered by a clean error handler', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.get('/throw', function throwingHandler (req, res) {
         throw new Error('sync boom')
@@ -593,7 +550,7 @@ describeTracing('TracingChannel', function () {
         .expect(500, 'sync boom', function (err) {
           if (err) return done(err)
 
-          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          const errorEvents = events.filter(byPhase('error'))
           assert.equal(errorEvents.length, 1, 'exactly one error event should fire')
           assert.equal(errorEvents[0].ctx.layer.name, 'throwingHandler',
             'error event should belong to the throwing route layer')
@@ -603,10 +560,7 @@ describeTracing('TracingChannel', function () {
     })
 
     it('should emit error on route only when async reject is recovered by a clean error handler', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.get('/reject', async function rejectingHandler (req, res) {
         throw new Error('async boom')
@@ -622,7 +576,7 @@ describeTracing('TracingChannel', function () {
         .expect(500, 'async boom', function (err) {
           if (err) return done(err)
 
-          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          const errorEvents = events.filter(byPhase('error'))
           assert.equal(errorEvents.length, 1, 'exactly one error event should fire')
           assert.equal(errorEvents[0].ctx.layer.name, 'rejectingHandler',
             'error event should belong to the rejecting route layer')
@@ -632,10 +586,7 @@ describeTracing('TracingChannel', function () {
     })
 
     it('should emit error on both layers when sync throw is followed by a throwing error handler', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.get('/throw', function throwingHandler (req, res) {
         throw new Error('sync boom')
@@ -651,7 +602,7 @@ describeTracing('TracingChannel', function () {
         .expect(500, function (err) {
           if (err) return done(err)
 
-          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          const errorEvents = events.filter(byPhase('error'))
 
           assert.equal(errorEvents.length, 2, 'error should fire on both layers')
 
@@ -670,10 +621,7 @@ describeTracing('TracingChannel', function () {
     })
 
     it('should emit error on both layers when async reject is followed by a throwing error handler', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.get('/reject', async function rejectingHandler (req, res) {
         throw new Error('async boom')
@@ -689,7 +637,7 @@ describeTracing('TracingChannel', function () {
         .expect(500, function (err) {
           if (err) return done(err)
 
-          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          const errorEvents = events.filter(byPhase('error'))
 
           assert.equal(errorEvents.length, 2, 'error should fire on both layers')
 
@@ -710,10 +658,7 @@ describeTracing('TracingChannel', function () {
 
   describe('async handlers', function () {
     it('should trace async handlers that return promises', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.get('/async', function asyncHandler (req, res) {
         return new Promise(function (resolve) {
@@ -730,8 +675,8 @@ describeTracing('TracingChannel', function () {
         .expect(200, 'async hello', function (err) {
           if (err) return done(err)
 
-          const startEvents = events.filter(function (e) { return e.phase === 'start' })
-          const asyncEndEvents = events.filter(function (e) { return e.phase === 'asyncEnd' })
+          const startEvents = events.filter(byPhase('start'))
+          const asyncEndEvents = events.filter(byPhase('asyncEnd'))
 
           assert.ok(startEvents.length > 0, 'should have start events')
           assert.ok(asyncEndEvents.length > 0, 'should have asyncEnd events')
@@ -743,11 +688,8 @@ describeTracing('TracingChannel', function () {
 
   describe('nested routers', function () {
     it('should trace middleware in nested routers', function (done) {
-      const router = new Router()
+      const { router, server } = traced()
       const nested = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       nested.get('/bar', function nestedHandler (req, res) {
         res.statusCode = 200
@@ -761,7 +703,7 @@ describeTracing('TracingChannel', function () {
         .expect(200, 'nested', function (err) {
           if (err) return done(err)
 
-          const startEvents = events.filter(function (e) { return e.phase === 'start' })
+          const startEvents = events.filter(byPhase('start'))
           const handlerEvent = startEvents.find(function (e) {
             return e.ctx.layer && e.ctx.layer.name === 'nestedHandler'
           })
@@ -775,27 +717,21 @@ describeTracing('TracingChannel', function () {
 
   describe('error deduplication', function () {
     it('should report a next(err) error once, on the origin layer, across mounted routers', function (done) {
-      const outer = new Router()
+      const { router: outer, server } = traced()
       const nested = new Router()
-      const server = createServer(outer)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       nested.get('/bar', function innerHandler (req, res, next) {
         next(new Error('boom'))
       })
       outer.use('/foo', nested)
-      outer.use(function recover (err, req, res, next) { // eslint-disable-line no-unused-vars
-        res.statusCode = 500
-        res.end(err.message)
-      })
+      outer.use(recover)
 
       request(server)
         .get('/foo/bar')
         .expect(500, 'boom', function (err) {
           if (err) return done(err)
 
-          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          const errorEvents = events.filter(byPhase('error'))
           assert.equal(errorEvents.length, 1,
             'the same error bubbling through the mounted router must be reported once')
           assert.equal(errorEvents[0].ctx.layer.name, 'innerHandler',
@@ -806,29 +742,23 @@ describeTracing('TracingChannel', function () {
     })
 
     it('should report a next(err) error once across two mount levels', function (done) {
-      const outer = new Router()
+      const { router: outer, server } = traced()
       const mid = new Router()
       const deep = new Router()
-      const server = createServer(outer)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       deep.get('/baz', function deepHandler (req, res, next) {
         next(new Error('boom'))
       })
       mid.use('/bar', deep)
       outer.use('/foo', mid)
-      outer.use(function recover (err, req, res, next) { // eslint-disable-line no-unused-vars
-        res.statusCode = 500
-        res.end(err.message)
-      })
+      outer.use(recover)
 
       request(server)
         .get('/foo/bar/baz')
         .expect(500, 'boom', function (err) {
           if (err) return done(err)
 
-          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          const errorEvents = events.filter(byPhase('error'))
           assert.equal(errorEvents.length, 1,
             'the error must not be re-reported at each ancestor router')
           assert.equal(errorEvents[0].ctx.layer.name, 'deepHandler')
@@ -838,27 +768,21 @@ describeTracing('TracingChannel', function () {
     })
 
     it('should report a thrown error once across mounted routers', function (done) {
-      const outer = new Router()
+      const { router: outer, server } = traced()
       const nested = new Router()
-      const server = createServer(outer)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       nested.get('/bar', function innerThrow (req, res) {
         throw new Error('boom')
       })
       outer.use('/foo', nested)
-      outer.use(function recover (err, req, res, next) { // eslint-disable-line no-unused-vars
-        res.statusCode = 500
-        res.end(err.message)
-      })
+      outer.use(recover)
 
       request(server)
         .get('/foo/bar')
         .expect(500, 'boom', function (err) {
           if (err) return done(err)
 
-          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          const errorEvents = events.filter(byPhase('error'))
           assert.equal(errorEvents.length, 1,
             'a thrown error must be reported once, at its origin')
           assert.equal(errorEvents[0].ctx.layer.name, 'innerThrow')
@@ -868,27 +792,21 @@ describeTracing('TracingChannel', function () {
     })
 
     it('should report a rejected error once across mounted routers', function (done) {
-      const outer = new Router()
+      const { router: outer, server } = traced()
       const nested = new Router()
-      const server = createServer(outer)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       nested.get('/bar', async function innerReject (req, res) {
         throw new Error('boom')
       })
       outer.use('/foo', nested)
-      outer.use(function recover (err, req, res, next) { // eslint-disable-line no-unused-vars
-        res.statusCode = 500
-        res.end(err.message)
-      })
+      outer.use(recover)
 
       request(server)
         .get('/foo/bar')
         .expect(500, 'boom', function (err) {
           if (err) return done(err)
 
-          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          const errorEvents = events.filter(byPhase('error'))
           assert.equal(errorEvents.length, 1,
             'a rejected error must be reported once, at its origin')
           assert.equal(errorEvents[0].ctx.layer.name, 'innerReject')
@@ -898,10 +816,7 @@ describeTracing('TracingChannel', function () {
     })
 
     it('should report next(err) once when an error handler forwards it', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.get('/fail', function origin (req, res, next) {
         next(new Error('boom'))
@@ -909,17 +824,14 @@ describeTracing('TracingChannel', function () {
       router.use(function forwarding (err, req, res, next) {
         next(err)
       })
-      router.use(function recover (err, req, res, next) { // eslint-disable-line no-unused-vars
-        res.statusCode = 500
-        res.end(err.message)
-      })
+      router.use(recover)
 
       request(server)
         .get('/fail')
         .expect(500, 'boom', function (err) {
           if (err) return done(err)
 
-          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          const errorEvents = events.filter(byPhase('error'))
           assert.equal(errorEvents.length, 1,
             'forwarding the same error with next(err) must not re-report it')
           assert.equal(errorEvents[0].ctx.layer.name, 'origin')
@@ -929,10 +841,7 @@ describeTracing('TracingChannel', function () {
     })
 
     it('should report next(err) once when an error handler rethrows it', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.get('/fail', function origin (req, res, next) {
         next(new Error('boom'))
@@ -940,17 +849,14 @@ describeTracing('TracingChannel', function () {
       router.use(function rethrowing (err, req, res, next) { // eslint-disable-line no-unused-vars
         throw err
       })
-      router.use(function recover (err, req, res, next) { // eslint-disable-line no-unused-vars
-        res.statusCode = 500
-        res.end(err.message)
-      })
+      router.use(recover)
 
       request(server)
         .get('/fail')
         .expect(500, 'boom', function (err) {
           if (err) return done(err)
 
-          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          const errorEvents = events.filter(byPhase('error'))
           assert.equal(errorEvents.length, 1,
             'throw err and next(err) are equivalent to the router, so rethrowing the same error must not re-report it')
           assert.equal(errorEvents[0].ctx.layer.name, 'origin')
@@ -962,10 +868,7 @@ describeTracing('TracingChannel', function () {
 
   describe('event ordering', function () {
     it('should emit start before asyncEnd', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.get('/order', function (req, res) {
         res.statusCode = 200
@@ -992,10 +895,7 @@ describeTracing('TracingChannel', function () {
 
   describe('multiple middleware', function () {
     it('should emit events for each middleware in the chain', function (done) {
-      const router = new Router()
-      const server = createServer(router)
-
-      dc.tracingChannel(CHANNEL).subscribe(handlers)
+      const { router, server } = traced()
 
       router.use(function first (req, res, next) {
         next()
@@ -1015,7 +915,7 @@ describeTracing('TracingChannel', function () {
         .expect(200, function (err) {
           if (err) return done(err)
 
-          const startEvents = events.filter(function (e) { return e.phase === 'start' })
+          const startEvents = events.filter(byPhase('start'))
           const names = startEvents.map(function (e) { return e.ctx.layer.name })
 
           assert.ok(names.indexOf('first') >= 0, 'should trace first middleware')
@@ -1030,4 +930,15 @@ describeTracing('TracingChannel', function () {
 // Predicate matching a captured event by its layer name.
 function byLayer (name) {
   return function (e) { return e.ctx.layer && e.ctx.layer.name === name }
+}
+
+// Predicate matching a captured event by its lifecycle phase.
+function byPhase (name) {
+  return function (e) { return e.phase === name }
+}
+
+// Error handler that recovers by ending the response with the error message.
+function recover (err, req, res, next) { // eslint-disable-line no-unused-vars
+  res.statusCode = 500
+  res.end(err.message)
 }
