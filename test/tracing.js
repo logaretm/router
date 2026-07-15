@@ -867,10 +867,10 @@ describeTracing('TracingChannel', function () {
   })
 
   describe('event ordering', function () {
-    it('should emit start before asyncEnd', function (done) {
+    it('should emit only start and end for a synchronous handler', function (done) {
       const { router, server } = traced()
 
-      router.get('/order', function (req, res) {
+      router.get('/order', function syncHandler (req, res) {
         res.statusCode = 200
         res.end('ok')
       })
@@ -880,13 +880,35 @@ describeTracing('TracingChannel', function () {
         .expect(200, function (err) {
           if (err) return done(err)
 
-          const phases = events.map(function (e) { return e.phase })
-          const firstStart = phases.indexOf('start')
-          const lastAsyncEnd = phases.lastIndexOf('asyncEnd')
+          const phases = events.filter(byLayer('syncHandler')).map(function (e) { return e.phase })
+          assert.equal(phases.length, 2, 'a synchronous handler has no async phase')
+          assert.equal(phases[0], 'start')
+          assert.equal(phases[1], 'end')
+          assert.ok(phases.indexOf('asyncStart') < 0 && phases.indexOf('asyncEnd') < 0,
+            'a synchronous handler should not emit asyncStart/asyncEnd')
 
-          assert.ok(firstStart >= 0, 'should have start')
-          assert.ok(lastAsyncEnd >= 0, 'should have asyncEnd')
-          assert.ok(firstStart < lastAsyncEnd, 'start should come before asyncEnd')
+          done()
+        })
+    })
+
+    it('should emit start before asyncEnd for an asynchronous handler', function (done) {
+      const { router, server } = traced()
+
+      router.get('/order', async function asyncHandler (req, res) {
+        res.statusCode = 200
+        res.end('ok')
+      })
+
+      request(server)
+        .get('/order')
+        .expect(200, function (err) {
+          if (err) return done(err)
+
+          const phases = events.filter(byLayer('asyncHandler')).map(function (e) { return e.phase })
+          assert.ok(phases.indexOf('start') >= 0, 'should have start')
+          assert.ok(phases.indexOf('asyncEnd') >= 0, 'should have asyncEnd')
+          assert.ok(phases.indexOf('start') < phases.indexOf('asyncEnd'),
+            'start should come before asyncEnd')
 
           done()
         })
