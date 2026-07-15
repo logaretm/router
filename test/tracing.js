@@ -524,6 +524,33 @@ describeTracing('TracingChannel', function () {
         })
     })
 
+    it('should normalize a falsy rejection to the error the router forwards', function (done) {
+      const router = new Router()
+      const server = createServer(router)
+
+      dc.tracingChannel('express.router.request').subscribe(handlers)
+
+      router.get('/reject', async function rejectFalsy (req, res) {
+        return Promise.reject() // eslint-disable-line prefer-promise-reject-errors
+      })
+
+      request(server)
+        .get('/reject')
+        .expect(500, function (err) {
+          if (err) return done(err)
+
+          const errorEvents = events.filter(function (e) { return e.phase === 'error' })
+          assert.equal(errorEvents.length, 1, 'should report the rejection once')
+
+          const reported = errorEvents[0].ctx.error
+          assert.ok(reported instanceof Error,
+            'a falsy rejection is reported as the Error the router forwards to next(), not the raw value')
+          assert.equal(reported.message, 'Rejected promise')
+
+          done()
+        })
+    })
+
     it('should emit error on route only when sync throw is recovered by a clean error handler', function (done) {
       const router = new Router()
       const server = createServer(router)
