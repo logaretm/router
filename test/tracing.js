@@ -6,6 +6,8 @@ const assert = utils.assert
 const createServer = utils.createServer
 const request = utils.request
 
+const CHANNEL = 'express.router.request'
+
 let dc
 let tracingChannel
 
@@ -34,7 +36,7 @@ describeTracing('TracingChannel', function () {
   })
 
   afterEach(function () {
-    dc.tracingChannel('express.router.request').unsubscribe(handlers)
+    dc.tracingChannel(CHANNEL).unsubscribe(handlers)
   })
 
   describe('when no subscribers', function () {
@@ -58,7 +60,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.use(function myMiddleware (req, res, next) {
         next()
@@ -93,7 +95,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.use(function (req, res, next) {
         next()
@@ -126,7 +128,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.get('/users/:id', function getUser (req, res) {
         res.statusCode = 200
@@ -155,7 +157,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.get('/foo', function myHandler (req, res) {
         res.statusCode = 200
@@ -184,7 +186,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.get('/fail', function failingHandler (req, res, next) {
         next(new Error('boom'))
@@ -199,10 +201,6 @@ describeTracing('TracingChannel', function () {
         .get('/fail')
         .expect(500, 'boom', function (err) {
           if (err) return done(err)
-
-          const byLayer = function (name) {
-            return function (e) { return e.ctx.layer && e.ctx.layer.name === name }
-          }
 
           const failingEvents = events.filter(byLayer('failingHandler'))
           const errorHandlerEvents = events.filter(byLayer('myErrorHandler'))
@@ -232,7 +230,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.get('/fail', function failingHandler (req, res, next) {
         next(new Error('boom'))
@@ -247,10 +245,6 @@ describeTracing('TracingChannel', function () {
         .get('/fail')
         .expect(500, 'boom', function (err) {
           if (err) return done(err)
-
-          const byLayer = function (name) {
-            return function (e) { return e.ctx.layer && e.ctx.layer.name === name }
-          }
 
           const failingEvents = events.filter(byLayer('failingHandler'))
           const errorHandlerEvents = events.filter(byLayer('myErrorHandler'))
@@ -279,7 +273,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.use(function firstMiddleware (req, res, next) {
         next()
@@ -328,7 +322,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.get('/skip', function skipToNextRoute (req, res, next) {
         next('route')
@@ -356,7 +350,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.use(function ejectFromRouter (req, res, next) {
         next('router')
@@ -384,7 +378,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.get('/skip', function throwRoute (req, res) {
         throw 'route' // eslint-disable-line no-throw-literal
@@ -412,7 +406,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.use(function throwRouter (req, res) {
         throw 'router' // eslint-disable-line no-throw-literal
@@ -440,7 +434,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.get('/fail', function failingHandler (req, res, next) {
         next(new Error('unhandled boom'))
@@ -474,7 +468,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.get('/throw', function (req, res) {
         throw new Error('sync boom')
@@ -501,7 +495,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.get('/reject', async function (req, res) {
         throw new Error('async boom')
@@ -528,7 +522,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.get('/reject', async function rejectFalsy (req, res) {
         return Promise.reject() // eslint-disable-line prefer-promise-reject-errors
@@ -555,7 +549,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.get('/throw', function throwingHandler (req, res) {
         throw new Error('sync boom')
@@ -584,7 +578,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.get('/reject', async function rejectingHandler (req, res) {
         throw new Error('async boom')
@@ -613,7 +607,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.get('/throw', function throwingHandler (req, res) {
         throw new Error('sync boom')
@@ -630,18 +624,15 @@ describeTracing('TracingChannel', function () {
           if (err) return done(err)
 
           const errorEvents = events.filter(function (e) { return e.phase === 'error' })
-          const byName = function (name) {
-            return errorEvents.find(function (e) { return e.ctx.layer.name === name })
-          }
 
           assert.equal(errorEvents.length, 2, 'error should fire on both layers')
 
-          const routeError = byName('throwingHandler')
+          const routeError = errorEvents.find(byLayer('throwingHandler'))
           assert.ok(routeError, 'route layer should emit error')
           assert.ok(!routeError.ctx.handled,
             'route layer is not an error handler, so handled flag must be absent')
 
-          const handlerError = byName('throwingErrorHandler')
+          const handlerError = errorEvents.find(byLayer('throwingErrorHandler'))
           assert.ok(handlerError, 'error handler should emit its own error')
           assert.equal(handlerError.ctx.handled, true,
             'error handler\'s own error event must carry handled:true so APMs can classify the span correctly')
@@ -654,7 +645,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.get('/reject', async function rejectingHandler (req, res) {
         throw new Error('async boom')
@@ -671,18 +662,15 @@ describeTracing('TracingChannel', function () {
           if (err) return done(err)
 
           const errorEvents = events.filter(function (e) { return e.phase === 'error' })
-          const byName = function (name) {
-            return errorEvents.find(function (e) { return e.ctx.layer.name === name })
-          }
 
           assert.equal(errorEvents.length, 2, 'error should fire on both layers')
 
-          const routeError = byName('rejectingHandler')
+          const routeError = errorEvents.find(byLayer('rejectingHandler'))
           assert.ok(routeError, 'route layer should emit error')
           assert.ok(!routeError.ctx.handled,
             'route layer is not an error handler, so handled flag must be absent')
 
-          const handlerError = byName('throwingErrorHandler')
+          const handlerError = errorEvents.find(byLayer('throwingErrorHandler'))
           assert.ok(handlerError, 'error handler should emit its own error')
           assert.equal(handlerError.ctx.handled, true,
             'error handler\'s own error event must carry handled:true so APMs can classify the span correctly')
@@ -697,7 +685,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.get('/async', function asyncHandler (req, res) {
         return new Promise(function (resolve) {
@@ -731,7 +719,7 @@ describeTracing('TracingChannel', function () {
       const nested = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       nested.get('/bar', function nestedHandler (req, res) {
         res.statusCode = 200
@@ -763,7 +751,7 @@ describeTracing('TracingChannel', function () {
       const nested = new Router()
       const server = createServer(outer)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       nested.get('/bar', function innerHandler (req, res, next) {
         next(new Error('boom'))
@@ -795,7 +783,7 @@ describeTracing('TracingChannel', function () {
       const deep = new Router()
       const server = createServer(outer)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       deep.get('/baz', function deepHandler (req, res, next) {
         next(new Error('boom'))
@@ -826,7 +814,7 @@ describeTracing('TracingChannel', function () {
       const nested = new Router()
       const server = createServer(outer)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       nested.get('/bar', function innerThrow (req, res) {
         throw new Error('boom')
@@ -856,7 +844,7 @@ describeTracing('TracingChannel', function () {
       const nested = new Router()
       const server = createServer(outer)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       nested.get('/bar', async function innerReject (req, res) {
         throw new Error('boom')
@@ -885,7 +873,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.get('/fail', function origin (req, res, next) {
         next(new Error('boom'))
@@ -918,7 +906,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.get('/order', function (req, res) {
         res.statusCode = 200
@@ -948,7 +936,7 @@ describeTracing('TracingChannel', function () {
       const router = new Router()
       const server = createServer(router)
 
-      dc.tracingChannel('express.router.request').subscribe(handlers)
+      dc.tracingChannel(CHANNEL).subscribe(handlers)
 
       router.use(function first (req, res, next) {
         next()
@@ -979,3 +967,8 @@ describeTracing('TracingChannel', function () {
     })
   })
 })
+
+// Predicate matching a captured event by its layer name.
+function byLayer (name) {
+  return function (e) { return e.ctx.layer && e.ctx.layer.name === name }
+}
